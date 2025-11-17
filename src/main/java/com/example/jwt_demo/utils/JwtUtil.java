@@ -1,53 +1,92 @@
 package com.example.jwt_demo.utils;
 
-import io.jsonwebtoken.*;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.security.Key;
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.function.Function;
 
 @Component
 public class JwtUtil {
 
-    private static final String SECRET_KEY = "my_super_secret_key_12345678901234567890"; // خليها طويلة وقوية
-    private static final long EXPIRATION_TIME = 1000 * 60 * 60; // ساعة واحدة
+    @Value("${jwt.secret}")
+    private String secret;
 
-    private Key getSigningKey() {
-        return Keys.hmacShaKeyFor(SECRET_KEY.getBytes());
+    @Value("${jwt.access.expiration.ms}")
+    private long accessTokenValidityMillis;
+
+    @Value("${jwt.refresh.expiration.ms}")
+    private long refreshTokenValidityMillis;
+
+    private SecretKey getSigningKey() {
+        return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
-    // ✅ إنشاء Access Token جديد
-    public String generateAccessToken(String username) {
+    // Access Token
+    public String generateAccessToken(String email) {
+        Date now = new Date();
+        Date expiry = new Date(now.getTime() + accessTokenValidityMillis);
         return Jwts.builder()
-                .setSubject(username)
-                .setIssuedAt(new Date(System.currentTimeMillis()))
-                .setExpiration(new Date(System.currentTimeMillis() + EXPIRATION_TIME))
+                .setSubject(email)
+                .setIssuedAt(now)
+                .setExpiration(expiry)
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
     }
 
-    // ✅ استخراج اسم المستخدم من التوكن
-    public String extractUsername(String token) {
-        return parseClaims(token).getSubject();
+    // Refresh Token (الآن JWT)
+    public String generateRefreshToken(String email) {
+        Date now = new Date();
+        Date expiry = new Date(now.getTime() + refreshTokenValidityMillis);
+        return Jwts.builder()
+                .setSubject(email)
+                .setIssuedAt(now)
+                .setExpiration(expiry)
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+                .compact();
     }
 
-    // ✅ فحص انتهاء صلاحية التوكن
-    public boolean isTokenExpired(String token) {
-        return parseClaims(token).getExpiration().before(new Date());
+    public String extractUsername(String token) throws ExpiredJwtException {
+        return extractClaim(token, Claims::getSubject);
     }
 
-    // ✅ التحقق من صحة التوكن
-    public boolean validateToken(String token, String username) {
-        return username.equals(extractUsername(token)) && !isTokenExpired(token);
+    public Date extractExpiration(String token) {
+        return extractClaim(token, Claims::getExpiration);
     }
 
-    // ✅ دالة مساعدة لاستخراج الـ Claims (المعلومات بداخل التوكن)
-    private Claims parseClaims(String token) {
-        return Jwts.parserBuilder()
+    public <T> T extractClaim(String token, Function<Claims, T> resolver) throws ExpiredJwtException {
+        Claims claims = Jwts.parserBuilder()
                 .setSigningKey(getSigningKey())
                 .build()
                 .parseClaimsJws(token)
                 .getBody();
+        return resolver.apply(claims);
+    }
+
+    public boolean isTokenExpired(String token) {
+        try {
+            Date exp = extractExpiration(token);
+            return exp.before(new Date());
+        } catch (ExpiredJwtException e) {
+            return true;
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    public boolean validateToken(String token, String email) {
+        try {
+            final String tokenEmail = extractUsername(token);
+            return (tokenEmail.equals(email) && !isTokenExpired(token));
+        } catch (Exception e) {
+            return false;
+        }
     }
 }

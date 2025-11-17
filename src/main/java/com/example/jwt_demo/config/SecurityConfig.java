@@ -24,17 +24,17 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/register", "/login", "/refresh").permitAll()
+                        .requestMatchers("/register", "/login", "/refresh", "/logout").permitAll()
                         .anyRequest().authenticated()
-
                 )
+                .logout(logout -> logout.disable())  // 👈 إلغاء سيكيوريتي Logout
                 .sessionManagement(session -> session.disable())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
-    // ✅ حل مشكلة PasswordEncoder
+
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();

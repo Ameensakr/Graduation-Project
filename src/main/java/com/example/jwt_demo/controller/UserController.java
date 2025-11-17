@@ -20,7 +20,7 @@ public class UserController {
     private UserService userService;
 
     @Autowired
-    private JwtUtil jwtUtil; // ✅ استخدمناه بدل الطرق الـ static
+    private JwtUtil jwtUtil;
 
     // ---------------------- REGISTER ----------------------
     @PostMapping("/register")
@@ -29,35 +29,39 @@ public class UserController {
         String email = body.get("email");
         String password = body.get("password");
 
-        boolean ok = userService.registerUser(username, email, password);
-        if (!ok) return ResponseEntity.badRequest().body(Map.of("error", " Email already exists"));
+        if (username == null || email == null || password == null)
+            return ResponseEntity.badRequest().body(Map.of("error", "Missing fields"));
 
+        boolean ok = userService.registerUser(username, email, password);
+
+        if (!ok)
+            return ResponseEntity.badRequest().body(Map.of("error", "Email already exists"));
 
         return ResponseEntity.ok(Map.of("message", "User registered successfully"));
     }
 
-
     // ---------------------- LOGIN ----------------------
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Map<String, String> body, HttpServletResponse response) {
-        String username = body.get("username");
+        String email = body.get("email");
         String password = body.get("password");
 
-        if (!userService.loginUser(username, password))
+        if (email == null || password == null)
+            return ResponseEntity.badRequest().body(Map.of("error", "Missing email or password"));
+
+        if (!userService.loginUserByEmail(email, password))
             return ResponseEntity.status(401).body(Map.of("error", "Invalid credentials"));
 
-        String accessToken = jwtUtil.generateAccessToken(username); // ✅
-        String refreshToken = userService.generateRefreshToken();
+        String accessToken = jwtUtil.generateAccessToken(email);
+        String refreshToken = jwtUtil.generateRefreshToken(email);
 
-        // حفظ refresh token في المستخدم
-        userService.storeRefreshTokenForUser(username, refreshToken, 7L * 24 * 60 * 60 * 1000); // 7 أيام
+        userService.storeRefreshTokenForUser(email, refreshToken);
 
-        // إضافة refreshToken كـ Cookie آمن
         Cookie cookie = new Cookie("refreshToken", refreshToken);
         cookie.setHttpOnly(true);
-        cookie.setSecure(false); // خليه true في حالة HTTPS
+        cookie.setSecure(false); // لو HTTPS استخدم true
         cookie.setPath("/");
-        cookie.setMaxAge(7 * 24 * 60 * 60); // 7 أيام
+        cookie.setMaxAge(7 * 24 * 60 * 60);
         response.addCookie(cookie);
 
         return ResponseEntity.ok(Map.of(
@@ -70,36 +74,28 @@ public class UserController {
     @PostMapping("/refresh")
     public ResponseEntity<?> refresh(HttpServletRequest request, HttpServletResponse response) {
         String refreshToken = null;
-
-        // استخراج الكوكي
         if (request.getCookies() != null) {
             for (Cookie c : request.getCookies()) {
-                if ("refreshToken".equals(c.getName())) {
-                    refreshToken = c.getValue();
-                }
+                if ("refreshToken".equals(c.getName())) refreshToken = c.getValue();
             }
         }
 
         if (refreshToken == null)
             return ResponseEntity.status(401).body(Map.of("error", "Missing refresh token"));
 
-        // استخراج username من الـ token نفسه
-        String username;
+        String email;
         try {
-            username = jwtUtil.extractUsername(refreshToken); // ✅
+            email = jwtUtil.extractUsername(refreshToken);
         } catch (Exception e) {
             return ResponseEntity.status(401).body(Map.of("error", "Invalid refresh token"));
         }
 
-        // تحقق من صلاحية refresh token
-        if (!userService.validateRefreshToken(username, refreshToken))
-            return ResponseEntity.status(401).body(Map.of("error", "Invalid or expired token"));
+        if (!userService.validateRefreshToken(email, refreshToken))
+            return ResponseEntity.status(401).body(Map.of("error", "Invalid or expired refresh token"));
 
-        // توليد توكنات جديدة (token rotation)
-        String newAccessToken = jwtUtil.generateAccessToken(username); // ✅
-        String newRefreshToken = userService.generateRefreshToken();
-
-        userService.storeRefreshTokenForUser(username, newRefreshToken, 7L * 24 * 60 * 60 * 1000);
+        String newAccessToken = jwtUtil.generateAccessToken(email);
+        String newRefreshToken = jwtUtil.generateRefreshToken(email);
+        userService.storeRefreshTokenForUser(email, newRefreshToken);
 
         Cookie cookie = new Cookie("refreshToken", newRefreshToken);
         cookie.setHttpOnly(true);
@@ -114,66 +110,56 @@ public class UserController {
         ));
     }
 
-    // ---------------------- LOGOUT ----------------------
+    // ---------------------- LOGOUT محسّن ----------------------
     @PostMapping("/logout")
     public ResponseEntity<?> logout(HttpServletRequest request, HttpServletResponse response) {
-        String username = null;
-
-        // استخرجي username من الـ refresh token لو موجود
         if (request.getCookies() != null) {
             for (Cookie c : request.getCookies()) {
                 if ("refreshToken".equals(c.getName())) {
                     try {
-                        username = jwtUtil.extractUsername(c.getValue()); // ✅
+                        String email = jwtUtil.extractUsername(c.getValue());
+                        userService.revokeRefreshToken(email);
                     } catch (Exception ignored) {}
+                    // مسح الكوكيز
+                    c.setValue("");
+                    c.setPath("/");
+                    c.setMaxAge(0);
+                    c.setHttpOnly(true);
+                    c.setSecure(false);
+                    response.addCookie(c);
                 }
             }
         }
-
-        if (username != null)
-            userService.revokeRefreshToken(username);
-
-        // امسحي الكوكي
-        Cookie cookie = new Cookie("refreshToken", "");
-        cookie.setHttpOnly(true);
-        cookie.setSecure(false);
-        cookie.setPath("/");
-        cookie.setMaxAge(0);
-        response.addCookie(cookie);
-
         return ResponseEntity.ok(Map.of("message", "Logged out successfully"));
     }
 
-    // ---------------------- PROFILE ----------------------
+    // ---------------------- PROFILE محسّن ----------------------
     @GetMapping("/profile")
-    public ResponseEntity<?> profile(@RequestHeader(value = "Authorization", required = false) String authHeader) {
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+    public ResponseEntity<?> profile(@RequestHeader(value="Authorization", required=false) String authHeader) {
+        if (authHeader == null || !authHeader.startsWith("Bearer "))
             return ResponseEntity.status(401).body(Map.of("error", "Missing or invalid Authorization header"));
-        }
 
         String token = authHeader.substring(7);
-        String username;
-
+        String email;
         try {
-            username = jwtUtil.extractUsername(token); // ✅
+            email = jwtUtil.extractUsername(token);
         } catch (Exception e) {
             return ResponseEntity.status(401).body(Map.of("error", "Invalid token"));
         }
 
-        if (jwtUtil.isTokenExpired(token)) { // ✅
+        if (jwtUtil.isTokenExpired(token)) {
             return ResponseEntity.status(401).body(Map.of("error", "Token expired"));
         }
 
-        Optional<User> userOpt = userService.findByUsername(username);
-        if (userOpt.isEmpty()) {
+        Optional<User> userOpt = userService.findByEmail(email);
+        if (userOpt.isEmpty())
             return ResponseEntity.status(404).body(Map.of("error", "User not found"));
-        }
 
         User user = userOpt.get();
         return ResponseEntity.ok(Map.of(
                 "username", user.getUsername(),
                 "email", user.getEmail(),
-                "message", "Welcome, " + user.getUsername()
+                "message", "Welcome " + user.getUsername()
         ));
     }
 }
