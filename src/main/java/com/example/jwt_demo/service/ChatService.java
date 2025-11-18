@@ -6,8 +6,10 @@ import com.example.jwt_demo.repository.ConversationRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class ChatService {
@@ -20,28 +22,44 @@ public class ChatService {
         this.aiService = aiService;
     }
 
-    // إرسال رسالة + إضافة رد AI
-    public ChatConversation sendMessage(String userId, String message, String sender) {
-        List<ChatConversation> userConversations = chatRepository.findByUserId(userId);
+    public ChatConversation sendMessage(String userId, String message, String sender, String conversationId) {
 
         ChatConversation conversation;
-        if (userConversations.isEmpty()) {
+
+        if (conversationId == null || conversationId.isEmpty()) {
+            // إنشاء محادثة جديدة
             conversation = new ChatConversation();
             conversation.setUserId(userId);
-            conversation.setMessages(new java.util.ArrayList<>());
+            conversation.setConversationId(UUID.randomUUID().toString());
+            conversation.setMessages(new ArrayList<>());
             conversation.setCreatedAt(LocalDateTime.now());
         } else {
-            conversation = userConversations.get(userConversations.size() - 1);
+            // استخدام محادثة موجودة
+            conversation = chatRepository
+                    .findByConversationIdAndUserId(conversationId, userId)
+                    .orElseThrow(() -> new RuntimeException("Conversation not found"));
         }
 
         // رسالة المستخدم
-        ChatMessage userMsg = new ChatMessage(sender, message, LocalDateTime.now());
+        ChatMessage userMsg = new ChatMessage(
+                conversation.getConversationId(),
+                userId,
+                sender,
+                message,
+                LocalDateTime.now()
+        );
         conversation.getMessages().add(userMsg);
 
-        // رسالة AI (dummy)
+        // الرد من البوت
         if (!sender.equals("bot")) {
             String aiReply = aiService.getReply(message);
-            ChatMessage botMsg = new ChatMessage("bot", aiReply, LocalDateTime.now());
+            ChatMessage botMsg = new ChatMessage(
+                    conversation.getConversationId(),
+                    "bot",
+                    "bot",
+                    aiReply,
+                    LocalDateTime.now()
+            );
             conversation.getMessages().add(botMsg);
         }
 
@@ -49,11 +67,13 @@ public class ChatService {
         return chatRepository.save(conversation);
     }
 
+    // جلب كل المحادثات الخاصة بمستخدم
     public List<ChatConversation> getUserConversations(String userId) {
         return chatRepository.findByUserId(userId);
     }
 
+    // جلب محادثة محددة
     public Optional<ChatConversation> getConversation(String conversationId, String userId) {
-        return chatRepository.findByIdAndUserId(conversationId, userId);
+        return chatRepository.findByConversationIdAndUserId(conversationId, userId);
     }
 }

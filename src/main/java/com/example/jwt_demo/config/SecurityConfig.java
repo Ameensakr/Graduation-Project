@@ -24,16 +24,14 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/register", "/login", "/refresh", "/logout").permitAll()
-                        .anyRequest().authenticated()
+                        .requestMatchers("/register", "/login", "/refresh").permitAll() // endpoints مفتوحة
+                        .anyRequest().authenticated()  // كل الباقي لازم JWT
                 )
-                .logout(logout -> logout.disable())  // 👈 إلغاء سيكيوريتي Logout
-                .sessionManagement(session -> session.disable())
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .logout(logout -> logout.disable()); // تعطيل Logout الافتراضي
 
         return http.build();
     }
-
 
     @Bean
     public PasswordEncoder passwordEncoder() {

@@ -1,29 +1,24 @@
 package com.example.jwt_demo.model;
 
-import lombok.AllArgsConstructor;
 import lombok.Data;
-import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 
-@Document(collection = "conversations")
 @Data
-@NoArgsConstructor
-@AllArgsConstructor
+@Document("chat_conversations")
 public class ChatConversation {
 
     @Id
-    private String id;
+    private String id;   // _id في MongoDB
 
-    private String userId; // مستخدم واحد فقط
+    private String conversationId;  // معرف المحادثة اللي بنستخدمه في API
 
-    private List<ChatMessage> messages = new ArrayList<>();
+    private String userId;
+    private List<ChatMessage> messages;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
-
