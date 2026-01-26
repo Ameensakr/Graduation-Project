@@ -14,7 +14,7 @@ public class ChatConversation {
     @Id
     private String id;   // _id في MongoDB
 
-    private String conversationId;  // معرف المحادثة اللي بنستخدمه في API
+    private String conversationId;
 
     private String userId;
     private List<ChatMessage> messages;

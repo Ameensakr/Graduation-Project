@@ -1,10 +1,10 @@
 package com.example.jwt_demo.controller;
-
 import com.example.jwt_demo.model.User;
 import com.example.jwt_demo.service.UserService;
 import com.example.jwt_demo.utils.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.servlet.http.Cookie;
@@ -55,11 +55,10 @@ public class UserController {
         String accessToken = jwtUtil.generateAccessToken(email);
         String refreshToken = jwtUtil.generateRefreshToken(email);
 
-        userService.storeRefreshTokenForUser(email, refreshToken);
-
+        // مش بنخزن refresh token في DB بعد كده
         Cookie cookie = new Cookie("refreshToken", refreshToken);
         cookie.setHttpOnly(true);
-        cookie.setSecure(false); // لو HTTPS استخدم true
+        cookie.setSecure(false);
         cookie.setPath("/");
         cookie.setMaxAge(7 * 24 * 60 * 60);
         response.addCookie(cookie);
@@ -69,6 +68,7 @@ public class UserController {
                 "message", "Login successful"
         ));
     }
+
 
     // ---------------------- REFRESH TOKEN ----------------------
     @PostMapping("/refresh")
@@ -90,12 +90,12 @@ public class UserController {
             return ResponseEntity.status(401).body(Map.of("error", "Invalid refresh token"));
         }
 
-        if (!userService.validateRefreshToken(email, refreshToken))
-            return ResponseEntity.status(401).body(Map.of("error", "Invalid or expired refresh token"));
+
+        if (jwtUtil.isTokenExpired(refreshToken))
+            return ResponseEntity.status(401).body(Map.of("error", "Refresh token expired"));
 
         String newAccessToken = jwtUtil.generateAccessToken(email);
         String newRefreshToken = jwtUtil.generateRefreshToken(email);
-        userService.storeRefreshTokenForUser(email, newRefreshToken);
 
         Cookie cookie = new Cookie("refreshToken", newRefreshToken);
         cookie.setHttpOnly(true);
@@ -110,17 +110,13 @@ public class UserController {
         ));
     }
 
-    // ---------------------- LOGOUT محسّن ----------------------
+    // ---------------------- LOGOUT ----------------------
     @PostMapping("/logout")
     public ResponseEntity<?> logout(HttpServletRequest request, HttpServletResponse response) {
         if (request.getCookies() != null) {
             for (Cookie c : request.getCookies()) {
                 if ("refreshToken".equals(c.getName())) {
-                    try {
-                        String email = jwtUtil.extractUsername(c.getValue());
-                        userService.revokeRefreshToken(email);
-                    } catch (Exception ignored) {}
-                    // مسح الكوكيز
+                    // مسح الكوكيز بس
                     c.setValue("");
                     c.setPath("/");
                     c.setMaxAge(0);
@@ -133,33 +129,30 @@ public class UserController {
         return ResponseEntity.ok(Map.of("message", "Logged out successfully"));
     }
 
-    // ---------------------- PROFILE محسّن ----------------------
+    // ---------------------- PROFILE ----------------------
     @GetMapping("/profile")
-    public ResponseEntity<?> profile(@RequestHeader(value="Authorization", required=false) String authHeader) {
-        if (authHeader == null || !authHeader.startsWith("Bearer "))
-            return ResponseEntity.status(401).body(Map.of("error", "Missing or invalid Authorization header"));
+    public ResponseEntity<?> profile(
+            @AuthenticationPrincipal String email
+    ) {
 
-        String token = authHeader.substring(7);
-        String email;
-        try {
-            email = jwtUtil.extractUsername(token);
-        } catch (Exception e) {
-            return ResponseEntity.status(401).body(Map.of("error", "Invalid token"));
-        }
-
-        if (jwtUtil.isTokenExpired(token)) {
-            return ResponseEntity.status(401).body(Map.of("error", "Token expired"));
+        if (email == null) {
+            return ResponseEntity.status(401)
+                    .body(Map.of("error", "Unauthorized"));
         }
 
         Optional<User> userOpt = userService.findByEmail(email);
-        if (userOpt.isEmpty())
-            return ResponseEntity.status(404).body(Map.of("error", "User not found"));
+        if (userOpt.isEmpty()) {
+            return ResponseEntity.status(404)
+                    .body(Map.of("error", "User not found"));
+        }
 
         User user = userOpt.get();
+
         return ResponseEntity.ok(Map.of(
                 "username", user.getUsername(),
                 "email", user.getEmail(),
                 "message", "Welcome " + user.getUsername()
         ));
+
     }
 }

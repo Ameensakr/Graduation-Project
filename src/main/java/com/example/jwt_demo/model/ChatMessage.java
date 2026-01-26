@@ -10,8 +10,8 @@ import java.time.LocalDateTime;
 public class ChatMessage {
 
     private String conversationId;
-    private String userId;   // اللي بعت الرسالة
-    private String sender;   // "user" أو "bot"
+    private String userId;
+    private String sender;   // "user" Or "bot"
     private String content;
     private LocalDateTime createdAt;
 }

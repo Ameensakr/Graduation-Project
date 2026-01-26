@@ -6,7 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class JwtDemoApplication {
 	public static void main(String[] args) {
-		SpringApplication.run(JwtDemoApplication.class, args); //بيبدأ السيرفر (Tomcat المدمج داخل Spring Boot).
-		System.out.println("✅ Server started on port 8081");
+		SpringApplication.run(JwtDemoApplication.class, args); // Run Tomcat Server
+		System.out.println("Server started on port 8083");
 	}
 }

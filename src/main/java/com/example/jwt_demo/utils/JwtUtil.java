@@ -41,7 +41,7 @@ public class JwtUtil {
                 .compact();
     }
 
-    // Refresh Token (الآن JWT)
+    // Refresh Token (JWT)
     public String generateRefreshToken(String email) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + refreshTokenValidityMillis);
@@ -74,8 +74,6 @@ public class JwtUtil {
         try {
             Date exp = extractExpiration(token);
             return exp.before(new Date());
-        } catch (ExpiredJwtException e) {
-            return true;
         } catch (Exception e) {
             return true;
         }

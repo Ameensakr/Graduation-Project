@@ -10,9 +10,9 @@ import java.util.Optional;
 @Repository
 public interface ConversationRepository extends MongoRepository<ChatConversation, String> {
 
-    // تجيب المحادثة بناءً على conversationId و userId
+    // One chat
     Optional<ChatConversation> findByConversationIdAndUserId(String conversationId, String userId);
 
-    // تجيب كل المحادثات الخاصة بالمستخدم
+    // All chats for user
     List<ChatConversation> findByUserId(String userId);
 }

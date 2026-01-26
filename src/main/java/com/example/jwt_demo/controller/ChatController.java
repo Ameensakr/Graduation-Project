@@ -1,45 +1,73 @@
 package com.example.jwt_demo.controller;
 
 import com.example.jwt_demo.model.ChatConversation;
-import com.example.jwt_demo.model.ChatMessage;
 import com.example.jwt_demo.model.ChatRequest;
+import com.example.jwt_demo.model.User;
 import com.example.jwt_demo.service.ChatService;
+import com.example.jwt_demo.service.UserService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Optional;
 
 @RestController
-@RequestMapping("/chat")
+@RequestMapping("/api/chats")
 public class ChatController {
 
     private final ChatService chatService;
+    private final UserService userService;
 
-    public ChatController(ChatService chatService) {
+    public ChatController(ChatService chatService, UserService userService) {
         this.chatService = chatService;
+        this.userService = userService;
     }
 
-    @PostMapping("/send")
-    public ResponseEntity<ChatConversation> sendMessage(@RequestBody ChatRequest chatRequest) {
+    @PostMapping
+    public ResponseEntity<ChatConversation> sendMessage(
+            @AuthenticationPrincipal String email,
+            @RequestBody ChatRequest request
+    ) {
+
+        User user = userService.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
         ChatConversation conversation = chatService.sendMessage(
-                chatRequest.getUserId(),
-                chatRequest.getMessage(),
-                chatRequest.getSender(),
-                chatRequest.getConversationId() // يمكن null لفتح محادثة جديدة
+                user.getId(),
+                request.getMessage(),
+                request.getConversationId()
         );
+
         return ResponseEntity.ok(conversation);
     }
 
-    @GetMapping("/all")
-    public ResponseEntity<List<ChatConversation>> getUserConversations(@RequestParam String userId) {
-        return ResponseEntity.ok(chatService.getUserConversations(userId));
+    @GetMapping
+    public ResponseEntity<List<ChatConversation>> getMyChats(
+            @AuthenticationPrincipal String email
+    ) {
+
+        User user = userService.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        List<ChatConversation> conversations =
+                chatService.getUserConversations(user.getId());
+
+        return ResponseEntity.ok(conversations);
     }
 
-    @GetMapping("/conversation")
-    public ResponseEntity<?> getConversation(@RequestParam String conversationId, @RequestParam String userId) {
-        Optional<ChatConversation> conversation = chatService.getConversation(conversationId, userId);
-        return conversation.<ResponseEntity<?>>map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.status(404).body("Conversation not found"));
+
+    @GetMapping("/{conversationId}")
+    public ResponseEntity<ChatConversation> getConversation(
+            @AuthenticationPrincipal String email,
+            @PathVariable String conversationId
+    ) {
+
+        User user = userService.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        return chatService.getConversation(conversationId, user.getId())
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
+
 }

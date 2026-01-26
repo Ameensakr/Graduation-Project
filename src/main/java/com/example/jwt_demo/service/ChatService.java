@@ -14,66 +14,81 @@ import java.util.UUID;
 @Service
 public class ChatService {
 
-    private final ConversationRepository chatRepository;
+    private final ConversationRepository conversationRepository;
     private final AIService aiService;
 
-    public ChatService(ConversationRepository chatRepository, AIService aiService) {
-        this.chatRepository = chatRepository;
+    public ChatService(ConversationRepository conversationRepository,
+                       AIService aiService) {
+        this.conversationRepository = conversationRepository;
         this.aiService = aiService;
     }
 
-    public ChatConversation sendMessage(String userId, String message, String sender, String conversationId) {
+    public ChatConversation sendMessage(
+            String userId,
+            String message,
+            String conversationId
+    ) {
 
         ChatConversation conversation;
 
-        if (conversationId == null || conversationId.isEmpty()) {
-            // إنشاء محادثة جديدة
+        // New chat
+        if (conversationId == null || conversationId.isBlank()) {
+
             conversation = new ChatConversation();
-            conversation.setUserId(userId);
             conversation.setConversationId(UUID.randomUUID().toString());
+            conversation.setUserId(userId);
             conversation.setMessages(new ArrayList<>());
             conversation.setCreatedAt(LocalDateTime.now());
-        } else {
-            // استخدام محادثة موجودة
-            conversation = chatRepository
+            conversation.setUpdatedAt(LocalDateTime.now());
+
+        }
+        // Old chat
+        else {
+            conversation = conversationRepository
                     .findByConversationIdAndUserId(conversationId, userId)
-                    .orElseThrow(() -> new RuntimeException("Conversation not found"));
+                    .orElseThrow(() ->
+                            new RuntimeException("Conversation not found or access denied"));
         }
 
-        // رسالة المستخدم
-        ChatMessage userMsg = new ChatMessage(
+        // Message
+        ChatMessage userMessage = new ChatMessage(
                 conversation.getConversationId(),
                 userId,
-                sender,
+                "user",
                 message,
                 LocalDateTime.now()
         );
-        conversation.getMessages().add(userMsg);
 
-        // الرد من البوت
-        if (!sender.equals("bot")) {
-            String aiReply = aiService.getReply(message);
-            ChatMessage botMsg = new ChatMessage(
-                    conversation.getConversationId(),
-                    "bot",
-                    "bot",
-                    aiReply,
-                    LocalDateTime.now()
-            );
-            conversation.getMessages().add(botMsg);
-        }
+        conversation.getMessages().add(userMessage);
+
+        // Bot reply
+        String aiReply = aiService.getReply(message);
+
+        ChatMessage botMessage = new ChatMessage(
+                conversation.getConversationId(),
+                "bot",
+                "bot",
+                aiReply,
+                LocalDateTime.now()
+        );
+
+        conversation.getMessages().add(botMessage);
 
         conversation.setUpdatedAt(LocalDateTime.now());
-        return chatRepository.save(conversation);
+
+        return conversationRepository.save(conversation);
     }
 
-    // جلب كل المحادثات الخاصة بمستخدم
+    // All chats for user
     public List<ChatConversation> getUserConversations(String userId) {
-        return chatRepository.findByUserId(userId);
+        return conversationRepository.findByUserId(userId);
     }
 
-    // جلب محادثة محددة
-    public Optional<ChatConversation> getConversation(String conversationId, String userId) {
-        return chatRepository.findByConversationIdAndUserId(conversationId, userId);
+    // One chat
+    public Optional<ChatConversation> getConversation(
+            String conversationId,
+            String userId
+    ) {
+        return conversationRepository.findByConversationIdAndUserId(conversationId, userId);
     }
 }
