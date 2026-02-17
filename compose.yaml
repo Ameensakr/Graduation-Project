@@ -6,7 +6,7 @@ services:
       - 'MONGO_INITDB_ROOT_PASSWORD=secret'
       - 'MONGO_INITDB_ROOT_USERNAME=root'
     ports:
-      - '27017'
+      - '27017:27017'
   mysql:
     image: 'mysql:latest'
     environment:
@@ -15,7 +15,7 @@ services:
       - 'MYSQL_ROOT_PASSWORD=verysecret'
       - 'MYSQL_USER=myuser'
     ports:
-      - '3306'
+      - '3306:3306'
   postgres:
     image: 'postgres:latest'
     environment:
@@ -23,8 +23,8 @@ services:
       - 'POSTGRES_PASSWORD=secret'
       - 'POSTGRES_USER=myuser'
     ports:
-      - '5432'
+      - '5432:5432'
   redis:
     image: 'redis:latest'
     ports:
-      - '6379'
+      - '6379:6379'
