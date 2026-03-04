@@ -31,6 +31,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/register", "/login", "/refresh", "/logout").permitAll() // endpoints مفتوحة
+                        .requestMatchers("/api/auth/forgot-password", "/api/auth/reset-password").permitAll() // password reset endpoints
                         .anyRequest().authenticated()  // كل الباقي لازم JWT
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
