@@ -1,24 +1,35 @@
 package com.example.jwt_demo.service;
 
-import org.springframework.mail.javamail.JavaMailSender;
+import com.azure.communication.email.EmailClient;
+import com.azure.communication.email.EmailClientBuilder;
+import com.azure.communication.email.models.EmailMessage;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import lombok.RequiredArgsConstructor;
-import org.springframework.mail.SimpleMailMessage;
-
 @Service
-@RequiredArgsConstructor
 public class EmailService {
 
-    private final JavaMailSender javaMailSender;
+    @Value("${azure.communication.connection.string}")
+    private String connectionString;
+
+    @Value("${azure.communication.from.email}")
+    private String fromEmail;
 
     public void sendOtpEmail(String toEmail, String otp) {
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom("tripplanner143@gmail.com");
-        message.setTo(toEmail);
-        message.setSubject("Your Password Reset OTP");
-        message.setText("Your OTP for password reset is: " + otp + "\nIt is valid for 10 minutes.");
+        EmailClient emailClient = new EmailClientBuilder()
+                .connectionString(connectionString)
+                .buildClient();
 
-        javaMailSender.send(message);
+        EmailMessage message = new EmailMessage()
+                .setSenderAddress(fromEmail)
+                .setSubject("Your Password Reset OTP")
+                .setBodyPlainText("Your OTP for password reset is: " + otp + "\nIt is valid for 10 minutes.")
+                .setToRecipients(toEmail); 
+
+        try {
+            emailClient.beginSend(message);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to send email via Azure: " + e.getMessage());
+        }
     }
 }

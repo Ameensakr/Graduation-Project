@@ -40,11 +40,6 @@ public class UserService implements UserDetailsService {
         return true;
     }
 
-    public boolean loginUserByEmail(String email, String password) {
-        Optional<User> userOpt = userRepository.findByEmail(email);
-        return userOpt.filter(user -> passwordEncoder.matches(password, user.getPassword())).isPresent();
-    }
-
     public Optional<User> findByEmail(String email) {
         return userRepository.findByEmail(email);
     }

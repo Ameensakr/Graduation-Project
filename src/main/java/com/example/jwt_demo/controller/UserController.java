@@ -4,6 +4,10 @@ import com.example.jwt_demo.service.UserService;
 import com.example.jwt_demo.utils.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -21,6 +25,8 @@ public class UserController {
 
     @Autowired
     private JwtUtil jwtUtil;
+    @Autowired
+    private AuthenticationManager authenticationManager;
 
     // ---------------------- REGISTER ----------------------
     @PostMapping("/register")
@@ -46,27 +52,33 @@ public class UserController {
         String email = body.get("email");
         String password = body.get("password");
 
-        if (email == null || password == null)
-            return ResponseEntity.badRequest().body(Map.of("error", "Missing email or password"));
+        try {
 
-        if (!userService.loginUserByEmail(email, password))
+            Authentication authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(email, password)
+            );
+            if(authentication.isAuthenticated()) {
+                String accessToken = jwtUtil.generateAccessToken(email);
+                String refreshToken = jwtUtil.generateRefreshToken(email);
+
+                Cookie cookie = new Cookie("refreshToken", refreshToken);
+                cookie.setHttpOnly(true);
+                cookie.setSecure(false);
+                cookie.setPath("/");
+                cookie.setMaxAge(7 * 24 * 60 * 60);
+                response.addCookie(cookie);
+
+                return ResponseEntity.ok(Map.of(
+                        "accessToken", accessToken,
+                        "message", "Login successful"
+                ));
+            }
+        } catch (AuthenticationException e) {
             return ResponseEntity.status(401).body(Map.of("error", "Invalid credentials"));
+        }
 
-        String accessToken = jwtUtil.generateAccessToken(email);
-        String refreshToken = jwtUtil.generateRefreshToken(email);
+        return ResponseEntity.status(401).body(Map.of("error", "Authentication failed"));
 
-        // مش بنخزن refresh token في DB بعد كده
-        Cookie cookie = new Cookie("refreshToken", refreshToken);
-        cookie.setHttpOnly(true);
-        cookie.setSecure(false);
-        cookie.setPath("/");
-        cookie.setMaxAge(7 * 24 * 60 * 60);
-        response.addCookie(cookie);
-
-        return ResponseEntity.ok(Map.of(
-                "accessToken", accessToken,
-                "message", "Login successful"
-        ));
     }
 
 

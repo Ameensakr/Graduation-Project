@@ -5,6 +5,9 @@ services:
       - '8083:8083'
     environment:
       - 'MONGO_HOST=mongodb'
+      - 'JWT_SECRET=${JWT_SECRET}'
+      - 'AZURE_SENDER_ADDRESS=${AZURE_SENDER_ADDRESS}'
+      - 'AZURE_EMAIL_CONNECTION_STRING=${AZURE_EMAIL_CONNECTION_STRING}'
     depends_on:
       - mongodb
   mongodb:

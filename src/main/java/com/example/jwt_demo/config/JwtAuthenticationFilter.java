@@ -29,7 +29,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     @NonNull HttpServletResponse response,
                                     @NonNull FilterChain filterChain) throws ServletException, IOException {
 
-        final String path = request.getServletPath();
+        final String path = request.getRequestURI();
+
+
         // السماح بالـpublic endpoints بدون توكن
         if (path.equals("/register") || path.equals("/login") || path.equals("/refresh") ||
             path.equals("/logout") || path.equals("/api/auth/forgot-password") ||

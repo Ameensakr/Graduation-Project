@@ -1,7 +1,7 @@
 package com.example.jwt_demo.service;
 
 import java.time.LocalDateTime;
-import java.util.Random;
+import java.security.SecureRandom;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -30,7 +30,7 @@ public class AuthService {
         if (userRepository.findByEmail(email).isEmpty()) {
             throw new IllegalArgumentException("User not found");
         }
-        String otp = String.format("%06d", new Random().nextInt(999999));
+        String otp = String.format("%06d", new SecureRandom().nextInt(999999));
         otpTokenRepository.save(new OtpToken(email, otp, LocalDateTime.now().plusMinutes(10)));
         emailService.sendOtpEmail(email, otp);
     }

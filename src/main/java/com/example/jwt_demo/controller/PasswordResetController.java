@@ -1,5 +1,8 @@
 package com.example.jwt_demo.controller;
 
+import com.example.jwt_demo.service.RateLimitingService;
+import io.github.bucket4j.Bucket;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.http.ResponseEntity;
 import lombok.RequiredArgsConstructor;
@@ -13,18 +16,27 @@ import com.example.jwt_demo.dto.ResetPasswordRequest;
 @RequiredArgsConstructor
 public class PasswordResetController {
 
-    private final AuthService authService; // Or wherever you put the logic
+    private final AuthService authService;
+    private final RateLimitingService rateLimitingService;
 
     @PostMapping("/forgot-password")
-    public ResponseEntity<?> forgotPassword(@RequestBody ForgotPasswordRequest request) {
-        // Call service method to check email, generate OTP, save it, and send email
-        authService.requestPasswordReset(request.getEmail());
-        return ResponseEntity.ok("OTP sent to your email.");
+    public ResponseEntity<?> forgotPassword(@RequestBody ForgotPasswordRequest request, HttpServletRequest servletRequest) {
+
+        String email = request.getEmail() != null ? request.getEmail().trim().toLowerCase() : "";
+        
+        Bucket bucket = rateLimitingService.resolveBucket(email);
+
+
+        if (bucket.tryConsume(1)) {
+            authService.requestPasswordReset(email);
+            return ResponseEntity.ok("OTP sent to your email.");
+        }
+
+        return ResponseEntity.status(429).body("Too many requests for this email. Please try again in 10 minutes.");
     }
 
     @PostMapping("/reset-password")
     public ResponseEntity<?> resetPassword(@RequestBody ResetPasswordRequest request) {
-        // Call service method to validate OTP and update password
         authService.resetPassword(request);
         return ResponseEntity.ok("Password successfully updated.");
     }
