@@ -4,6 +4,7 @@ import com.example.jwt_demo.model.ChatConversation;
 import com.example.jwt_demo.model.ChatMessage;
 import com.example.jwt_demo.repository.ConversationRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -26,8 +27,8 @@ public class ChatService {
     public ChatConversation sendMessage(
             String userId,
             String message,
-            String conversationId
-    ) {
+            String conversationId,
+            MultipartFile file) {
 
         ChatConversation conversation;
 
@@ -40,6 +41,12 @@ public class ChatService {
             conversation.setMessages(new ArrayList<>());
             conversation.setCreatedAt(LocalDateTime.now());
             conversation.setUpdatedAt(LocalDateTime.now());
+
+            String title = aiService.generateTitle(message);
+            if (title == null || title.isEmpty()) {
+                title = message.length() > 30 ? message.substring(0, 30) + "..." : message;
+            }
+            conversation.setTitle(title);
 
         }
         // Old chat
@@ -62,7 +69,7 @@ public class ChatService {
         conversation.getMessages().add(userMessage);
 
         // Bot reply
-        String aiReply = aiService.getReply(message);
+        String aiReply = aiService.getReply(message, file);
 
         ChatMessage botMessage = new ChatMessage(
                 conversation.getConversationId(),

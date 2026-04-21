@@ -20,11 +20,11 @@ public class PasswordResetController {
     private final RateLimitingService rateLimitingService;
 
     @PostMapping("/forgot-password")
-    public ResponseEntity<?> forgotPassword(@RequestBody ForgotPasswordRequest request, HttpServletRequest servletRequest) {
+    public ResponseEntity<?> forgotPassword(@RequestBody ForgotPasswordRequest request) {
 
         String email = request.getEmail() != null ? request.getEmail().trim().toLowerCase() : "";
         
-        Bucket bucket = rateLimitingService.resolveBucket(email);
+        Bucket bucket = rateLimitingService.resolveForgetBucket(email);
 
 
         if (bucket.tryConsume(1)) {
@@ -37,7 +37,17 @@ public class PasswordResetController {
 
     @PostMapping("/reset-password")
     public ResponseEntity<?> resetPassword(@RequestBody ResetPasswordRequest request) {
-        authService.resetPassword(request);
-        return ResponseEntity.ok("Password successfully updated.");
+        String email = request.getEmail() != null ? request.getEmail().trim().toLowerCase() : "";
+        Bucket bucket = rateLimitingService.resolveResetBucket(email);
+        if (bucket.tryConsume(1)) {
+            try{
+                authService.resetPassword(request);
+                return ResponseEntity.ok("Password reset successful.");
+            } catch (IllegalArgumentException e) {
+                return ResponseEntity.status(400).body(e.getMessage());
+            }
+        }
+
+        return ResponseEntity.status(429).body("Too many requests for this email. Please try again in 10 minutes.");
     }
 }

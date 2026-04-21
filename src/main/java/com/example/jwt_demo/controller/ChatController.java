@@ -5,9 +5,11 @@ import com.example.jwt_demo.model.ChatRequest;
 import com.example.jwt_demo.model.User;
 import com.example.jwt_demo.service.ChatService;
 import com.example.jwt_demo.service.UserService;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -23,10 +25,12 @@ public class ChatController {
         this.userService = userService;
     }
 
-    @PostMapping
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ChatConversation> sendMessage(
             @AuthenticationPrincipal String email,
-            @RequestBody ChatRequest request
+            @RequestPart("message") String message,
+            @RequestPart(value = "conversationId", required = false) String conversationId,
+            @RequestPart(value = "file", required = false) MultipartFile file
     ) {
 
         User user = userService.findByEmail(email)
@@ -34,8 +38,9 @@ public class ChatController {
 
         ChatConversation conversation = chatService.sendMessage(
                 user.getId(),
-                request.getMessage(),
-                request.getConversationId()
+                message,
+                conversationId,
+                file
         );
 
         return ResponseEntity.ok(conversation);

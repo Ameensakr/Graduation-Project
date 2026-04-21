@@ -63,13 +63,14 @@ public class UserController {
 
                 Cookie cookie = new Cookie("refreshToken", refreshToken);
                 cookie.setHttpOnly(true);
-                cookie.setSecure(false);
+                cookie.setSecure(true);
                 cookie.setPath("/");
                 cookie.setMaxAge(7 * 24 * 60 * 60);
                 response.addCookie(cookie);
 
                 return ResponseEntity.ok(Map.of(
                         "accessToken", accessToken,
+                        "refreshToken", refreshToken,
                         "message", "Login successful"
                 ));
             }
@@ -84,9 +85,16 @@ public class UserController {
 
     // ---------------------- REFRESH TOKEN ----------------------
     @PostMapping("/refresh")
-    public ResponseEntity<?> refresh(HttpServletRequest request, HttpServletResponse response) {
+    public ResponseEntity<?> refresh(@RequestBody(required = false) Map<String, String> body, HttpServletRequest request, HttpServletResponse response) {
         String refreshToken = null;
-        if (request.getCookies() != null) {
+
+        // 1. Try to get it from the JSON body (for mobile)
+        if (body != null && body.containsKey("refreshToken")) {
+            refreshToken = body.get("refreshToken");
+        }
+
+        // 2. Fallback to cookies (for web)
+        if (refreshToken == null && request.getCookies() != null) {
             for (Cookie c : request.getCookies()) {
                 if ("refreshToken".equals(c.getName())) refreshToken = c.getValue();
             }
@@ -111,13 +119,14 @@ public class UserController {
 
         Cookie cookie = new Cookie("refreshToken", newRefreshToken);
         cookie.setHttpOnly(true);
-        cookie.setSecure(false);
+        cookie.setSecure(true);
         cookie.setPath("/");
         cookie.setMaxAge(7 * 24 * 60 * 60);
         response.addCookie(cookie);
 
         return ResponseEntity.ok(Map.of(
                 "accessToken", newAccessToken,
+                "refreshToken", newRefreshToken,
                 "message", "Token refreshed successfully"
         ));
     }

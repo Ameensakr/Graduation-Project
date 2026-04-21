@@ -16,6 +16,7 @@ public class ChatConversation {
 
     private String conversationId;
 
+    private String title;
     private String userId;
     private List<ChatMessage> messages;
 
