@@ -1,15 +1,16 @@
 package com.example.jwt_demo.controller;
 
 import com.example.jwt_demo.model.ChatConversation;
-import com.example.jwt_demo.model.ChatRequest;
 import com.example.jwt_demo.model.User;
 import com.example.jwt_demo.service.ChatService;
 import com.example.jwt_demo.service.UserService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -30,17 +31,21 @@ public class ChatController {
             @AuthenticationPrincipal String email,
             @RequestPart("message") String message,
             @RequestPart(value = "conversationId", required = false) String conversationId,
-            @RequestPart(value = "file", required = false) MultipartFile file
+            @RequestPart(value = "files", required = false) List<MultipartFile> files
     ) {
+        if (files != null && files.size() > 3) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Maximum 3 files per request");
+        }
 
         User user = userService.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
         ChatConversation conversation = chatService.sendMessage(
                 user.getId(),
                 message,
                 conversationId,
-                file
+                files
         );
 
         return ResponseEntity.ok(conversation);
@@ -52,12 +57,24 @@ public class ChatController {
     ) {
 
         User user = userService.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
         List<ChatConversation> conversations =
                 chatService.getUserConversations(user.getId());
 
         return ResponseEntity.ok(conversations);
+    }
+
+    @PostMapping("/{conversationId}/regenerate")
+    public ResponseEntity<ChatConversation> regenerate(
+            @AuthenticationPrincipal String email,
+            @PathVariable String conversationId
+    ) {
+        User user = userService.findByEmail(email)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        ChatConversation updated = chatService.regenerateLastReply(conversationId, user.getId());
+        return ResponseEntity.ok(updated);
     }
 
 
@@ -68,7 +85,7 @@ public class ChatController {
     ) {
 
         User user = userService.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
         return chatService.getConversation(conversationId, user.getId())
                 .map(ResponseEntity::ok)

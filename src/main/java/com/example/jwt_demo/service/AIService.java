@@ -1,8 +1,10 @@
 package com.example.jwt_demo.service;
 
+import com.example.jwt_demo.exception.AIServiceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
@@ -10,12 +12,14 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.Map;
 
 @Service
 public class AIService {
 
     private static final Logger log = LoggerFactory.getLogger(AIService.class);
+    private static final String ASK_PATH = "/ask";
 
     @Value("${ai.model.url:}")
     private String aiModelUrl;
@@ -30,15 +34,19 @@ public class AIService {
     public String generateTitle(String userMessage) {
         String prompt = "Generate a short title (max 5 words) for this conversation based on the first message: " + userMessage;
         try {
-            Map<String, Object> requestBody = Map.of("question", prompt);
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
+            MultiValueMap<String, Object> requestBody = new LinkedMultiValueMap<>();
+            requestBody.add("question", prompt);
 
-            ResponseEntity<Map> response = restTemplate.exchange(aiModelUrl+"/ask", HttpMethod.POST ,request, Map.class);
+            HttpHeaders headers = new HttpHeaders();
+
+            HttpEntity<MultiValueMap<String, Object>> request = new HttpEntity<>(requestBody, headers);
+
+            ParameterizedTypeReference<Map<String, Object>> type = new ParameterizedTypeReference<Map<String, Object>>() {
+            };
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(aiModelUrl + ASK_PATH, HttpMethod.POST, request, type);
 
             Map<String, Object> body = response.getBody();
-            if(body != null && body.containsKey("answer")) {
+            if (body != null && body.containsKey("answer")) {
                 String title = body.get("answer").toString().trim();
                 return title.length() > 50 ? title.substring(0, 47) + "..." : title;
             }
@@ -57,55 +65,52 @@ public class AIService {
      * - Request body: {"question": "user message"}
      * - Response: {"answer": "AI response"}
      */
-    public String getReply(String userMessage, MultipartFile file) {
-        // If AI model URL is not configured, return error
-        if (aiModelUrl == null || aiModelUrl.isEmpty() || aiModelUrl.contains("your-friend-model-url")) {
-            log.error("AI model URL not configured");
-            return "Error: AI model URL is not configured. Please check application.properties";
+    public String getReply(String userMessage, List<MultipartFile> files) {
+        if (aiModelUrl == null || aiModelUrl.isEmpty()) {
+            throw new AIServiceException("AI model URL is not configured");
         }
 
         try {
-            // Call friend's /ask endpoint
-
-
             HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             body.add("question", userMessage);
 
-            if(file != null && !file.isEmpty()) {
-                body.add("file", file.getResource());
+            if (files != null) {
+                for (MultipartFile f : files) {
+                    if (f != null && !f.isEmpty()) {
+                        body.add("files", f.getResource());
+                    }
+                }
             }
 
             HttpEntity<MultiValueMap<String, Object>> request = new HttpEntity<>(body, headers);
 
-            log.info("Calling AI model at: {}/ask", aiModelUrl);
+            log.info("Calling AI model at: {}{}", aiModelUrl, ASK_PATH);
 
-            ResponseEntity<Map> response = restTemplate.exchange(
-                aiModelUrl + "/ask",
-                HttpMethod.POST,
-                request,
-                Map.class
-            );
+            ParameterizedTypeReference<Map<String, Object>> type = new ParameterizedTypeReference<Map<String, Object>>() {
+            };
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                    aiModelUrl + ASK_PATH, HttpMethod.POST, request, type);
 
-            // Parse response
-            Map<String, Object> ResoponseBody = response.getBody();
-            if (ResoponseBody != null && ResoponseBody.containsKey("answer")) {
-                return (String) ResoponseBody.get("answer");
+            Map<String, Object> responseBody = response.getBody();
+            if (responseBody != null && responseBody.get("answer") != null) {
+                String answer = responseBody.get("answer").toString();
+                if (!answer.isBlank()) return answer;
             }
 
-            // Check for error in response
-            if (ResoponseBody != null && ResoponseBody.containsKey("error")) {
-                log.error("AI model returned error: {}", ResoponseBody.get("error"));
-                return "Sorry, the AI service encountered an error.";
+            if (responseBody != null && responseBody.containsKey("error")) {
+                log.error("AI model returned error: {}", responseBody.get("error"));
+                throw new AIServiceException("AI model returned error: " + responseBody.get("error"));
             }
 
-            log.warn("Unexpected response format from AI model: {}", ResoponseBody);
-            return "Sorry, I couldn't process your request.";
+            throw new AIServiceException("Unexpected response format from AI model");
 
+        } catch (AIServiceException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Error calling AI model: {}", e.getMessage(), e);
-            return "Sorry, there was an error connecting to the AI service. Please try again.";
+            throw new AIServiceException("Error connecting to AI service", e);
         }
     }
+
 }
