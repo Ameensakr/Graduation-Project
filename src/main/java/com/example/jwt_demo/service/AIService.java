@@ -1,6 +1,8 @@
 package com.example.jwt_demo.service;
 
+import com.example.jwt_demo.dto.AIReply;
 import com.example.jwt_demo.exception.AIServiceException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,6 +22,7 @@ public class AIService {
 
     private static final Logger log = LoggerFactory.getLogger(AIService.class);
     private static final String ASK_PATH = "/ask";
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Value("${ai.model.url:}")
     private String aiModelUrl;
@@ -65,7 +68,7 @@ public class AIService {
      * - Request body: {"question": "user message"}
      * - Response: {"answer": "AI response"}
      */
-    public String getReply(String userMessage, List<MultipartFile> files) {
+    public AIReply getReply(String userMessage, List<MultipartFile> files, String type, List<Map<String, String>> history) {
         if (aiModelUrl == null || aiModelUrl.isEmpty()) {
             throw new AIServiceException("AI model URL is not configured");
         }
@@ -73,7 +76,9 @@ public class AIService {
         try {
             HttpHeaders headers = new HttpHeaders();
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-            body.add("question", userMessage);
+            body.add("question", userMessage != null ? userMessage : "");
+            body.add("type", type != null ? type : "chat");
+            body.add("history", MAPPER.writeValueAsString(history != null ? history : List.of()));
 
             if (files != null) {
                 for (MultipartFile f : files) {
@@ -87,20 +92,26 @@ public class AIService {
 
             log.info("Calling AI model at: {}{}", aiModelUrl, ASK_PATH);
 
-            ParameterizedTypeReference<Map<String, Object>> type = new ParameterizedTypeReference<Map<String, Object>>() {
+            ParameterizedTypeReference<Map<String, Object>> respType = new ParameterizedTypeReference<Map<String, Object>>() {
             };
             ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
-                    aiModelUrl + ASK_PATH, HttpMethod.POST, request, type);
+                    aiModelUrl + ASK_PATH, HttpMethod.POST, request, respType);
 
             Map<String, Object> responseBody = response.getBody();
-            if (responseBody != null && responseBody.get("answer") != null) {
-                String answer = responseBody.get("answer").toString();
-                if (!answer.isBlank()) return answer;
-            }
+            if (responseBody != null) {
+                String returnedType = (String) responseBody.getOrDefault("type", "chat");
+                boolean isPlan = "plan".equals(returnedType);
+                Object result = isPlan ? responseBody.get("data") : responseBody.get("answer");
 
-            if (responseBody != null && responseBody.containsKey("error")) {
-                log.error("AI model returned error: {}", responseBody.get("error"));
-                throw new AIServiceException("AI model returned error: " + responseBody.get("error"));
+                if (result != null) {
+                    if (isPlan) return new AIReply(returnedType, null, result);
+                    return new AIReply(returnedType, result.toString(), null);
+                }
+
+                if (responseBody.containsKey("error")) {
+                    log.error("AI model returned error: {}", responseBody.get("error"));
+                    throw new AIServiceException("AI model returned error: " + responseBody.get("error"));
+                }
             }
 
             throw new AIServiceException("Unexpected response format from AI model");

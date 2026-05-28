@@ -29,10 +29,17 @@ public class ChatController {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ChatConversation> sendMessage(
             @AuthenticationPrincipal String email,
-            @RequestPart("message") String message,
+            @RequestPart(value = "message", required = false) String message,
             @RequestPart(value = "conversationId", required = false) String conversationId,
+            @RequestPart(value = "type", required = false) String type,
             @RequestPart(value = "files", required = false) List<MultipartFile> files
     ) {
+        boolean noMessage = message == null || message.isBlank();
+        boolean noFiles = files == null || files.isEmpty();
+        if (noMessage && noFiles) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Request must contain a message or at least one file");
+        }
         if (files != null && files.size() > 3) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Maximum 3 files per request");
@@ -45,7 +52,8 @@ public class ChatController {
                 user.getId(),
                 message,
                 conversationId,
-                files
+                files,
+                type
         );
 
         return ResponseEntity.ok(conversation);
@@ -77,6 +85,18 @@ public class ChatController {
         return ResponseEntity.ok(updated);
     }
 
+
+    @DeleteMapping("/{conversationId}")
+    public ResponseEntity<Void> deleteConversation(
+            @AuthenticationPrincipal String email,
+            @PathVariable String conversationId
+    ) {
+        User user = userService.findByEmail(email)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        chatService.deleteConversation(conversationId, user.getId());
+        return ResponseEntity.noContent().build();
+    }
 
     @GetMapping("/{conversationId}")
     public ResponseEntity<ChatConversation> getConversation(

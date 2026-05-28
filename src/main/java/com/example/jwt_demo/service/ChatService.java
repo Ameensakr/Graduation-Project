@@ -1,5 +1,6 @@
 package com.example.jwt_demo.service;
 
+import com.example.jwt_demo.dto.AIReply;
 import com.example.jwt_demo.exception.AIServiceException;
 import com.example.jwt_demo.model.ChatConversation;
 import com.example.jwt_demo.model.ChatMessage;
@@ -11,12 +12,16 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 @Service
 public class ChatService {
+
+    private static final int HISTORY_LIMIT = 20;
 
     private final ConversationRepository conversationRepository;
     private final AIService aiService;
@@ -31,7 +36,8 @@ public class ChatService {
             String userId,
             String message,
             String conversationId,
-            List<MultipartFile> files) {
+            List<MultipartFile> files,
+            String type) {
 
         ChatConversation conversation;
 
@@ -52,12 +58,16 @@ public class ChatService {
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found"));
         }
 
+        List<Map<String, String>> history = buildHistory(conversation.getMessages());
+
         // Message
         ChatMessage userMessage = new ChatMessage(
                 conversation.getConversationId(),
                 userId,
                 "user",
                 message,
+                "chat",
+                null,
                 LocalDateTime.now()
         );
 
@@ -66,13 +76,15 @@ public class ChatService {
 
         try {
             // Bot reply
-            String aiReply = aiService.getReply(message, files);
+            AIReply reply = aiService.getReply(message, files, type, history);
 
             ChatMessage botMessage = new ChatMessage(
                     conversation.getConversationId(),
                     null,
                     "bot",
-                    aiReply,
+                    reply.getContent(),
+                    reply.getType(),
+                    reply.getData(),
                     LocalDateTime.now()
             );
 
@@ -109,11 +121,44 @@ public class ChatService {
         if(!"user".equals(last.getSender())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Last message is not from user; nothing to regenerate");
         }
-        String aiReply = aiService.getReply(last.getContent(), null);
-        ChatMessage botMessage = new ChatMessage(conversation.getConversationId(), null, "bot", aiReply, LocalDateTime.now());
+
+        List<Map<String, String>> history = buildHistory(messages.subList(0, messages.size() - 1));
+
+        AIReply reply = aiService.getReply(last.getContent(), null, last.getType(), history);
+        ChatMessage botMessage = new ChatMessage(
+                conversation.getConversationId(),
+                null,
+                "bot",
+                reply.getContent(),
+                reply.getType(),
+                reply.getData(),
+                LocalDateTime.now()
+        );
         conversation.getMessages().add(botMessage);
         conversation.setUpdatedAt(LocalDateTime.now());
         return conversationRepository.save(conversation);
+    }
+
+    private List<Map<String, String>> buildHistory(List<ChatMessage> messages) {
+        if (messages == null || messages.isEmpty()) return List.of();
+        int from = Math.max(0, messages.size() - HISTORY_LIMIT);
+        List<Map<String, String>> history = new ArrayList<>();
+        for (ChatMessage m : messages.subList(from, messages.size())) {
+            String role = "user".equals(m.getSender()) ? "user" : "Soli";
+            String content = m.getContent() != null ? m.getContent() : "";
+            Map<String, String> turn = new HashMap<>();
+            turn.put("role", role);
+            turn.put("content", content);
+            history.add(turn);
+        }
+        return history;
+    }
+
+    public void deleteConversation(String conversationId, String userId) {
+        ChatConversation conv = conversationRepository
+                .findByConversationIdAndUserId(conversationId, userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found"));
+        conversationRepository.delete(conv);
     }
 
     // All chats for user

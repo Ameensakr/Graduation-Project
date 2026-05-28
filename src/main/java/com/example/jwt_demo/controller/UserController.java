@@ -11,9 +11,11 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import com.example.jwt_demo.repository.SavedPlanRepository;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
@@ -27,6 +29,11 @@ public class UserController {
     private JwtUtil jwtUtil;
     @Autowired
     private AuthenticationManager authenticationManager;
+    @Autowired
+    private SavedPlanRepository savedPlanRepository;
+
+    @Autowired
+    private com.example.jwt_demo.service.BlobStorageService blobStorageService;
 
     // ---------------------- REGISTER ----------------------
     @PostMapping("/register")
@@ -169,11 +176,44 @@ public class UserController {
 
         User user = userOpt.get();
 
-        return ResponseEntity.ok(Map.of(
-                "username", user.getUsername(),
-                "email", user.getEmail(),
-                "message", "Welcome " + user.getUsername()
-        ));
+        long plansMade = savedPlanRepository.countByUserId(user.getId());
 
+        Map<String, Object> body = new HashMap<>();
+        body.put("username", user.getUsername());
+        body.put("email", user.getEmail());
+        body.put("userImage", user.getUserImage());
+        body.put("bio", user.getBio());
+        body.put("adventureLevel", null);
+        body.put("plansMade", plansMade);
+        body.put("sitesVisited", 0);
+        body.put("nightsBooked", 0);
+        return ResponseEntity.ok(body);
+
+    }
+
+    @PutMapping("/profile")
+    public ResponseEntity<?> updateProfile(
+            @AuthenticationPrincipal String email,
+            @RequestBody Map<String, String> body) {
+        if (email == null) {
+            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
+        }
+        Optional<User> userOpt = userService.findByEmail(email);
+        if (userOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of("error", "User not found"));
+        }
+        User user = userOpt.get();
+        if (body.containsKey("bio")) user.setBio(body.get("bio"));
+        if (body.containsKey("userImage")) {
+            String newImage = body.get("userImage");
+            String oldImage = user.getUserImage();
+            if (oldImage != null && !oldImage.equals(newImage)) {
+                blobStorageService.deleteByUrl(oldImage);
+            }
+            user.setUserImage(newImage);
+        }
+        if (body.containsKey("username")) user.setUsername(body.get("username"));
+        userService.save(user);
+        return ResponseEntity.ok(Map.of("message", "Profile updated"));
     }
 }

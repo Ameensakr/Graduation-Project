@@ -1,5 +1,6 @@
 package com.example.jwt_demo.service;
 
+import com.example.jwt_demo.dto.AIReply;
 import com.example.jwt_demo.exception.AIServiceException;
 import com.example.jwt_demo.model.ChatConversation;
 import com.example.jwt_demo.model.ChatMessage;
@@ -16,6 +17,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,12 +38,21 @@ class ChatServiceTest {
         lenient().when(conversationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
+    private ChatMessage userMsg(String convId, String uid, String content) {
+        return new ChatMessage(convId, uid, "user", content, "chat", null, LocalDateTime.now());
+    }
+
+    private ChatMessage botMsg(String convId, String content) {
+        return new ChatMessage(convId, null, "bot", content, "chat", null, LocalDateTime.now());
+    }
+
     @Test
     void sendMessage_newConversation_createsAndSetsTitle() {
-        when(aiService.getReply(eq("hi"), any())).thenReturn("hello!");
+        when(aiService.getReply(eq("hi"), any(), any(), any()))
+                .thenReturn(new AIReply("chat", "hello!", null));
         when(aiService.generateTitle("hi")).thenReturn("Greeting");
 
-        ChatConversation result = chatService.sendMessage("u1", "hi", null, null);
+        ChatConversation result = chatService.sendMessage("u1", "hi", null, null, "chat");
 
         assertThat(result.getUserId()).isEqualTo("u1");
         assertThat(result.getConversationId()).isNotBlank();
@@ -49,17 +60,35 @@ class ChatServiceTest {
         assertThat(result.getMessages()).hasSize(2);
         assertThat(result.getMessages().get(0).getSender()).isEqualTo("user");
         assertThat(result.getMessages().get(0).getContent()).isEqualTo("hi");
+        assertThat(result.getMessages().get(0).getType()).isEqualTo("chat");
         assertThat(result.getMessages().get(1).getSender()).isEqualTo("bot");
         assertThat(result.getMessages().get(1).getContent()).isEqualTo("hello!");
+        assertThat(result.getMessages().get(1).getType()).isEqualTo("chat");
+    }
+
+    @Test
+    void sendMessage_planType_storesPlanData() {
+        Map<String, Object> plan = Map.of("title", "Cairo Trip", "days", List.of());
+        when(aiService.getReply(any(), any(), eq("plan"), any()))
+                .thenReturn(new AIReply("plan", null, plan));
+        when(aiService.generateTitle(any())).thenReturn("Cairo");
+
+        ChatConversation result = chatService.sendMessage("u1", "plan a trip", null, null, "plan");
+
+        ChatMessage bot = result.getMessages().get(1);
+        assertThat(bot.getType()).isEqualTo("plan");
+        assertThat(bot.getData()).isEqualTo(plan);
+        assertThat(bot.getContent()).isNull();
     }
 
     @Test
     void sendMessage_newConversation_titleFallsBackToTruncatedMessage_whenAiReturnsNull() {
-        when(aiService.getReply(any(), any())).thenReturn("ok");
+        when(aiService.getReply(any(), any(), any(), any()))
+                .thenReturn(new AIReply("chat", "ok", null));
         when(aiService.generateTitle(any())).thenReturn(null);
 
         String longMsg = "a".repeat(40);
-        ChatConversation result = chatService.sendMessage("u1", longMsg, "", null);
+        ChatConversation result = chatService.sendMessage("u1", longMsg, "", null, "chat");
 
         assertThat(result.getTitle()).hasSize(33).endsWith("...");
     }
@@ -70,14 +99,14 @@ class ChatServiceTest {
         existing.setConversationId("c1");
         existing.setUserId("u1");
         existing.setTitle("Existing Title");
-        existing.setMessages(new ArrayList<>(List.of(
-                new ChatMessage("c1", "u1", "user", "old", LocalDateTime.now()))));
+        existing.setMessages(new ArrayList<>(List.of(userMsg("c1", "u1", "old"))));
 
         when(conversationRepository.findByConversationIdAndUserId("c1", "u1"))
                 .thenReturn(Optional.of(existing));
-        when(aiService.getReply(any(), any())).thenReturn("reply");
+        when(aiService.getReply(any(), any(), any(), any()))
+                .thenReturn(new AIReply("chat", "reply", null));
 
-        ChatConversation result = chatService.sendMessage("u1", "new", "c1", null);
+        ChatConversation result = chatService.sendMessage("u1", "new", "c1", null, "chat");
 
         assertThat(result.getTitle()).isEqualTo("Existing Title");
         assertThat(result.getMessages()).hasSize(3);
@@ -89,16 +118,17 @@ class ChatServiceTest {
         when(conversationRepository.findByConversationIdAndUserId("c1", "u1"))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> chatService.sendMessage("u1", "hi", "c1", null))
+        assertThatThrownBy(() -> chatService.sendMessage("u1", "hi", "c1", null, "chat"))
                 .isInstanceOf(ResponseStatusException.class);
         verifyNoInteractions(aiService);
     }
 
     @Test
     void sendMessage_aiFails_savesConversationWithoutBotReply_andRethrows() {
-        when(aiService.getReply(any(), any())).thenThrow(new AIServiceException("down"));
+        when(aiService.getReply(any(), any(), any(), any()))
+                .thenThrow(new AIServiceException("down"));
 
-        assertThatThrownBy(() -> chatService.sendMessage("u1", "hi", null, null))
+        assertThatThrownBy(() -> chatService.sendMessage("u1", "hi", null, null, "chat"))
                 .isInstanceOf(AIServiceException.class);
 
         ArgumentCaptor<ChatConversation> captor = ArgumentCaptor.forClass(ChatConversation.class);
@@ -113,11 +143,11 @@ class ChatServiceTest {
         ChatConversation conv = new ChatConversation();
         conv.setConversationId("c1");
         conv.setUserId("u1");
-        conv.setMessages(new ArrayList<>(List.of(
-                new ChatMessage("c1", "u1", "user", "what time?", LocalDateTime.now()))));
+        conv.setMessages(new ArrayList<>(List.of(userMsg("c1", "u1", "what time?"))));
         when(conversationRepository.findByConversationIdAndUserId("c1", "u1"))
                 .thenReturn(Optional.of(conv));
-        when(aiService.getReply("what time?", null)).thenReturn("noon");
+        when(aiService.getReply(eq("what time?"), eq(null), any(), any()))
+                .thenReturn(new AIReply("chat", "noon", null));
 
         ChatConversation updated = chatService.regenerateLastReply("c1", "u1");
 
@@ -144,8 +174,7 @@ class ChatServiceTest {
         ChatConversation conv = new ChatConversation();
         conv.setConversationId("c1");
         conv.setUserId("u1");
-        conv.setMessages(new ArrayList<>(List.of(
-                new ChatMessage("c1", null, "bot", "hi", LocalDateTime.now()))));
+        conv.setMessages(new ArrayList<>(List.of(botMsg("c1", "hi"))));
         when(conversationRepository.findByConversationIdAndUserId("c1", "u1"))
                 .thenReturn(Optional.of(conv));
 
@@ -160,6 +189,29 @@ class ChatServiceTest {
 
         assertThatThrownBy(() -> chatService.regenerateLastReply("c1", "u1"))
                 .isInstanceOf(ResponseStatusException.class);
+    }
+
+    @Test
+    void deleteConversation_existing_deletes() {
+        ChatConversation conv = new ChatConversation();
+        conv.setConversationId("c1");
+        conv.setUserId("u1");
+        when(conversationRepository.findByConversationIdAndUserId("c1", "u1"))
+                .thenReturn(Optional.of(conv));
+
+        chatService.deleteConversation("c1", "u1");
+
+        verify(conversationRepository).delete(conv);
+    }
+
+    @Test
+    void deleteConversation_missing_throws404() {
+        when(conversationRepository.findByConversationIdAndUserId("c1", "u1"))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> chatService.deleteConversation("c1", "u1"))
+                .isInstanceOf(ResponseStatusException.class);
+        verify(conversationRepository, never()).delete(any(ChatConversation.class));
     }
 
     @Test

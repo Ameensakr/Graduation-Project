@@ -1,5 +1,6 @@
 package com.example.jwt_demo.service;
 
+import com.example.jwt_demo.dto.AIReply;
 import com.example.jwt_demo.exception.AIServiceException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,6 +11,7 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -34,46 +36,64 @@ class AIServiceTest {
     }
 
     @Test
-    void getReply_returnsAnswer() {
+    void getReply_chat_returnsAnswer() {
         server.expect(requestTo("http://ai.test/ask"))
                 .andExpect(method(POST))
-                .andRespond(withSuccess("{\"answer\":\"Hello\"}", MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess("{\"type\":\"chat\",\"answer\":\"Hello\"}", MediaType.APPLICATION_JSON));
 
-        String reply = aiService.getReply("hi", null);
+        AIReply reply = aiService.getReply("hi", null, "chat", null);
 
-        assertThat(reply).isEqualTo("Hello");
+        assertThat(reply.getType()).isEqualTo("chat");
+        assertThat(reply.getContent()).isEqualTo("Hello");
+        assertThat(reply.getData()).isNull();
         server.verify();
+    }
+
+    @Test
+    void getReply_plan_returnsData() {
+        String json = "{\"type\":\"plan\",\"data\":{\"title\":\"Cairo Trip\",\"days\":[]}}";
+        server.expect(requestTo("http://ai.test/ask"))
+                .andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
+
+        AIReply reply = aiService.getReply("plan a trip", null, "plan", null);
+
+        assertThat(reply.getType()).isEqualTo("plan");
+        assertThat(reply.getContent()).isNull();
+        assertThat(reply.getData()).isInstanceOf(Map.class);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) reply.getData();
+        assertThat(data).containsEntry("title", "Cairo Trip");
     }
 
     @Test
     void getReply_withFiles_sendsMultipart() {
         server.expect(requestTo("http://ai.test/ask"))
                 .andExpect(method(POST))
-                .andRespond(withSuccess("{\"answer\":\"Read it\"}", MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess("{\"type\":\"chat\",\"answer\":\"Read it\"}", MediaType.APPLICATION_JSON));
 
         MockMultipartFile file = new MockMultipartFile(
                 "files", "a.txt", "text/plain", "data".getBytes());
 
-        String reply = aiService.getReply("summarize", List.of(file));
+        AIReply reply = aiService.getReply("summarize", List.of(file), "chat", null);
 
-        assertThat(reply).isEqualTo("Read it");
+        assertThat(reply.getContent()).isEqualTo("Read it");
     }
 
     @Test
-    void getReply_emptyAnswer_throws() {
+    void getReply_missingAnswerAndData_throws() {
         server.expect(requestTo("http://ai.test/ask"))
-                .andRespond(withSuccess("{\"answer\":\"\"}", MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess("{\"type\":\"chat\"}", MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> aiService.getReply("hi", null))
+        assertThatThrownBy(() -> aiService.getReply("hi", null, "chat", null))
                 .isInstanceOf(AIServiceException.class);
     }
 
     @Test
     void getReply_errorField_throws() {
         server.expect(requestTo("http://ai.test/ask"))
-                .andRespond(withSuccess("{\"error\":\"bad\"}", MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess("{\"type\":\"chat\",\"error\":\"bad\"}", MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> aiService.getReply("hi", null))
+        assertThatThrownBy(() -> aiService.getReply("hi", null, "chat", null))
                 .isInstanceOf(AIServiceException.class)
                 .hasMessageContaining("bad");
     }
@@ -83,7 +103,7 @@ class AIServiceTest {
         server.expect(requestTo("http://ai.test/ask"))
                 .andRespond(withServerError());
 
-        assertThatThrownBy(() -> aiService.getReply("hi", null))
+        assertThatThrownBy(() -> aiService.getReply("hi", null, "chat", null))
                 .isInstanceOf(AIServiceException.class);
     }
 
@@ -91,7 +111,7 @@ class AIServiceTest {
     void getReply_blankUrl_throwsConfig() {
         ReflectionTestUtils.setField(aiService, "aiModelUrl", "");
 
-        assertThatThrownBy(() -> aiService.getReply("hi", null))
+        assertThatThrownBy(() -> aiService.getReply("hi", null, "chat", null))
                 .isInstanceOf(AIServiceException.class)
                 .hasMessageContaining("not configured");
     }

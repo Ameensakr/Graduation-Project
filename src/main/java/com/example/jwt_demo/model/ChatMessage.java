@@ -13,5 +13,7 @@ public class ChatMessage {
     private String userId;
     private String sender;   // "user" Or "bot"
     private String content;
+    private String type;
+    private Object data;
     private LocalDateTime createdAt;
 }
